@@ -11,20 +11,26 @@ vm.createContext(ctx);for(const file of ['data.js','pixel-user.js','pixel-events
 const run=s=>vm.runInContext(s,ctx);
 const events=()=>calls.filter(c=>c[1]==='registration_completed');
 const settle=async()=>{await run('pixelIdentityPending');await Promise.resolve();};
-const values={firstName:'Test',lastName:'Member',username:'test_registration',email:'test.registration@example.com',password:'DemoOnly2026!'};
+const values={firstName:'Test',lastName:'Member',username:'test_registration',email:'test.registration@example.com',phone:' +1 (202) 555-0147 ',password:'DemoOnly2026!'};
 function form(data){const button={disabled:false};return {id:'auth-form',values:data,querySelector:()=>button};}
 const submit=f=>handlers.submit({target:f,preventDefault(){}});
 (async()=>{
   const initialHtml=elements['#app'].innerHTML;
-  for(const name of ['firstName','lastName','username','email','password']) assert.match(initialHtml,new RegExp('<input[^>]*name="'+name+'"[^>]*\\brequired\\b'));
+  for(const name of ['firstName','lastName','username','email','phone','password']) assert.match(initialHtml,new RegExp('<input[^>]*name="'+name+'"[^>]*\\brequired\\b'));
   for(const name of ['address','city','state','zip','country']) {
     const tag=initialHtml.match(new RegExp('<(?:input|select)[^>]*name="'+name+'"[^>]*>'))[0];
     assert(!/\brequired\b/.test(tag));
   }
+  for(const phone of ['', '123', 'invalid']) {
+    await submit(form({...values,phone}));await settle();
+    assert.equal(events().length,0);assert.equal(storage.has('nm_accounts'),false);
+  }
   const f=form(values);const first=submit(f);await submit(f);await first;await settle();
   assert.equal(JSON.parse(storage.get('nm_accounts')).length,1);
+  assert.equal(JSON.parse(storage.get('nm_accounts'))[0].phone,'+1 (202) 555-0147');
   assert.deepEqual(JSON.parse(JSON.stringify(events())),[['measure','registration_completed',{type:'customer_action'}]]);
   assert.equal(calls[0][0],'init');assert.match(calls[0][1].user.email_sha256,/^[a-f0-9]{64}$/);
+  assert.equal(calls[0][1].user.phone_number_sha256,require('node:crypto').createHash('sha256').update('12025550147').digest('hex'));
   await submit(f);await ctx.render();await settle();assert.equal(events().length,1);
   run('currentUser=null');ctx.navigate('?page=account');
   await submit(form({identity:values.username,password:values.password}));await settle();assert.equal(events().length,1);
@@ -44,10 +50,12 @@ const submit=f=>handlers.submit({target:f,preventDefault(){}});
   run('currentUser=null');ctx.navigate('?page=account');
   await submit(form({identity:'address_member',password:values.password}));await settle();
   assert.equal(run('currentUser.address'),'123 Example Avenue');
+  assert.equal(run('currentUser.phone'),'+1 (202) 555-0147');
   assert.match(elements['#app'].innerHTML,/123 Example Avenue/);
   run("cart=[{id:'form-tee',size:'M',qty:1}]");ctx.navigate('?page=checkout');
   assert.match(elements['#app'].innerHTML,/name="address"[^>]*value="123 Example Avenue"[^>]*required/);
   assert.match(elements['#app'].innerHTML,/name="zip"[^>]*value="97205-1234"/);
+  assert.match(elements['#app'].innerHTML,/name="phone"[^>]*value="\+1 \(202\) 555-0147"/);
   console.log('PASS: required account fields, optional empty/complete addresses, ZIP validation, trimmed persistence, login restoration and checkout prefill');
   console.log('PASS: exact registration event, identity ordering, successful persistence, double-submit guard, no login/demo/refresh/duplicate/failure events');
 })().catch(e=>{console.error(e);process.exitCode=1;});
